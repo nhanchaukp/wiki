@@ -12,6 +12,7 @@
         .caption {{$t('editor:ckeditor.stats', { chars: stats.characters, words: stats.words })}}
     editor-conflict(v-model='isConflict', v-if='isConflict')
     page-selector(mode='select', v-model='insertLinkDialog', :open-handler='insertLinkHandler', :path='path', :locale='locale')
+    editor-modal-drawio-visual(@diagram-ready='onDiagramReady', ref='drawioModal')
 </template>
 
 <script>
@@ -20,13 +21,15 @@ import { get, sync } from 'vuex-pathify'
 import DecoupledEditor from '@requarks/ckeditor5'
 // import DecoupledEditor from '../../../../wiki-ckeditor5/build/ckeditor'
 import EditorConflict from './ckeditor/conflict.vue'
+import EditorModalDrawioVisual from './EditorModalDrawioVisual.vue'
 import { html as beautify } from 'js-beautify/js/lib/beautifier.min.js'
 
 /* global siteLangs */
 
 export default {
   components: {
-    EditorConflict
+    EditorConflict,
+    EditorModalDrawioVisual
   },
   props: {
     save: {
@@ -60,6 +63,97 @@ export default {
     },
     insertLinkHandler ({ locale, path }) {
       this.editor.execute('link', siteLangs.length > 0 ? `/${locale}/${path}` : `/${path}`)
+    },
+    openDrawioModal () {
+      window.dispatchEvent(new CustomEvent('editor:openDrawio', {
+        detail: null
+      }))
+    },
+    onDiagramReady (payload) {
+      // Convert SVG base64 to data URL
+      const svgDataUrl = `data:image/svg+xml;base64,${payload.svg}`
+
+      // Insert or update the diagram
+      const model = this.editor.model
+      model.change(writer => {
+        const selection = model.document.selection
+        const selectedElement = selection.getSelectedElement()
+
+        // Check if we're editing an existing diagram
+        if (selectedElement && selectedElement.name === 'imageBlock' && selectedElement.getAttribute('data-drawio-xml')) {
+          // Update existing diagram
+          writer.setAttribute('src', svgDataUrl, selectedElement)
+          writer.setAttribute('data-drawio-xml', payload.xml, selectedElement)
+        } else {
+          // Insert new diagram using the existing imageInsert command
+          this.editor.execute('imageInsert', {
+            source: svgDataUrl
+          })
+
+          // Find the newly inserted image and add the draw.io XML attribute
+          const insertedImage = selection.getSelectedElement()
+          if (insertedImage && insertedImage.name === 'imageBlock') {
+            writer.setAttribute('data-drawio-xml', payload.xml, insertedImage)
+          }
+        }
+      })
+    },
+    initDrawioSupport () {
+      const editor = this.editor
+
+      // Extend schema to support data-drawio-xml attribute on images
+      editor.model.schema.extend('imageBlock', {
+        allowAttributes: ['data-drawio-xml']
+      })
+
+      // Conversion from model to view (downcast - for editing and data output)
+      editor.conversion.for('downcast').add(dispatcher => {
+        dispatcher.on('attribute:data-drawio-xml:imageBlock', (evt, data, conversionApi) => {
+          if (!data.item.is('element', 'imageBlock')) {
+            return
+          }
+
+          const viewWriter = conversionApi.writer
+          const viewElement = conversionApi.mapper.toViewElement(data.item)
+
+          if (data.attributeNewValue !== null) {
+            viewWriter.setAttribute('data-drawio-xml', data.attributeNewValue, viewElement)
+          } else {
+            viewWriter.removeAttribute('data-drawio-xml', viewElement)
+          }
+        })
+      })
+
+      // Conversion from view to model (upcast - for data loading)
+      editor.conversion.for('upcast').attributeToAttribute({
+        view: 'data-drawio-xml',
+        model: 'data-drawio-xml'
+      })
+
+      // Add a custom button to the toolbar
+      const toolbar = this.$refs.toolbarContainer.querySelector('.ck-toolbar')
+      if (toolbar) {
+        const button = document.createElement('button')
+        button.className = 'ck ck-button ck-off'
+        button.type = 'button'
+        button.title = 'Insert Diagram'
+        button.innerHTML = `
+          <svg class="ck ck-icon ck-button__icon" viewBox="0 0 20 20">
+            <path d="M3 6v3h4V6H3zm0 4v3h4v-3H3zm0 4v3h4v-3H3zm5 3h4v-3H8v3zm5 0h4v-3h-4v3zm4-4v-3h-4v3h4zm0-4V6h-4v3h4zm1.5 8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 17V4c.222-.863 1.068-1.5 2-1.5h13c.932 0 1.778.637 2 1.5v13zM12 13v-3H8v3h4zm0-4V6H8v3h4z"/>
+          </svg>
+        `
+        button.addEventListener('click', () => {
+          this.openDrawioModal()
+        })
+
+        // Insert after the imageUpload button if it exists, otherwise at the end
+        const imageUploadBtn = toolbar.querySelector('[data-cke-tooltip-text*="image" i], [data-cke-tooltip-text*="Insert" i]')
+        if (imageUploadBtn && imageUploadBtn.parentNode) {
+          imageUploadBtn.parentNode.insertBefore(button, imageUploadBtn.nextSibling)
+        } else {
+          toolbar.appendChild(button)
+        }
+      }
     }
   },
   async mounted () {
@@ -90,6 +184,9 @@ export default {
       }
     })
     this.$refs.toolbarContainer.appendChild(this.editor.ui.view.toolbar.element)
+
+    // Initialize draw.io integration
+    this.initDrawioSupport()
 
     if (this.mode !== 'create') {
       this.editor.setData(this.$store.get('editor/content'))
@@ -130,6 +227,30 @@ export default {
     this.$root.$on('overwriteEditorContent', () => {
       this.editor.setData(this.$store.get('editor/content'))
     })
+
+    // Handle double-click on diagrams to edit them
+    this.editor.editing.view.document.on('dblclick', (evt, data) => {
+      const viewElement = data.target
+      const modelElement = this.editor.editing.mapper.toModelElement(viewElement)
+
+      if (modelElement && modelElement.name === 'imageBlock') {
+        const drawioXml = modelElement.getAttribute('data-drawio-xml')
+        if (drawioXml) {
+          // Prevent default behavior
+          evt.stop()
+
+          // Select the image first
+          this.editor.model.change(writer => {
+            writer.setSelection(modelElement, 'on')
+          })
+
+          // Open draw.io modal with existing XML
+          window.dispatchEvent(new CustomEvent('editor:openDrawio', {
+            detail: drawioXml
+          }))
+        }
+      }
+    }, { priority: 'high' })
   },
   beforeDestroy () {
     if (this.editor) {

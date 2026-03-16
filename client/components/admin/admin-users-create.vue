@@ -22,7 +22,7 @@
           outlined
           prepend-icon='mdi-at'
           v-model='email'
-          label='Email Address'
+          label='User'
           key='newUserEmail'
           persistent-hint
           ref='emailInput'
@@ -33,7 +33,7 @@
           prepend-icon='mdi-lock-outline'
           append-icon='mdi-dice-5'
           v-model='password'
-          :label='mustChangePwd ? `Temporary Password` : `Password`'
+          :label='mustChangePwd ? `Temporary Password` : `OTP`'
           counter='255'
           @click:append='generatePwd'
           key='newUserPassword'
