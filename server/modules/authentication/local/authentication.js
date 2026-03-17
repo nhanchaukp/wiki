@@ -43,7 +43,7 @@ function getUserInfo(token, deviceId, deviceToken, isProd) {
 
 function loginSSO(username, otp) {
   return new Promise((resolve, reject) => {
-    var deviceId = 'wiki-home-' + username
+    var deviceId = 'wiki' + username
     WIKI.logger.info(`[Auth] Start SSO login with username: ${username} and deviceId: ${deviceId}`)
 
     var options = {
