@@ -12,24 +12,21 @@
         .caption {{$t('editor:ckeditor.stats', { chars: stats.characters, words: stats.words })}}
     editor-conflict(v-model='isConflict', v-if='isConflict')
     page-selector(mode='select', v-model='insertLinkDialog', :open-handler='insertLinkHandler', :path='path', :locale='locale')
-    editor-modal-drawio-visual(@diagram-ready='onDiagramReady', ref='drawioModal')
 </template>
 
 <script>
 import _ from 'lodash'
 import { get, sync } from 'vuex-pathify'
-import DecoupledEditor from '@requarks/ckeditor5'
+import DecoupledEditor from './common/ckeditor'
 // import DecoupledEditor from '../../../../wiki-ckeditor5/build/ckeditor'
 import EditorConflict from './ckeditor/conflict.vue'
-import EditorModalDrawioVisual from './EditorModalDrawioVisual.vue'
 import { html as beautify } from 'js-beautify/js/lib/beautifier.min.js'
 
-/* global siteLangs */
+/* global siteLangs, WIKI */
 
 export default {
   components: {
-    EditorConflict,
-    EditorModalDrawioVisual
+    EditorConflict
   },
   props: {
     save: {
@@ -46,7 +43,8 @@ export default {
       },
       content: '',
       isConflict: false,
-      insertLinkDialog: false
+      insertLinkDialog: false,
+      editingDiagramBlock: null
     }
   },
   computed: {
@@ -64,96 +62,169 @@ export default {
     insertLinkHandler ({ locale, path }) {
       this.editor.execute('link', siteLangs.length > 0 ? `/${locale}/${path}` : `/${path}`)
     },
-    openDrawioModal () {
-      window.dispatchEvent(new CustomEvent('editor:openDrawio', {
-        detail: null
-      }))
+    insertDiagram () {
+      this.activeModal = 'editorModalDrawio'
     },
-    onDiagramReady (payload) {
-      // Convert SVG base64 to data URL
-      const svgDataUrl = `data:image/svg+xml;base64,${payload.svg}`
-
-      // Insert or update the diagram
-      const model = this.editor.model
-      model.change(writer => {
-        const selection = model.document.selection
-        const selectedElement = selection.getSelectedElement()
-
-        // Check if we're editing an existing diagram
-        if (selectedElement && selectedElement.name === 'imageBlock' && selectedElement.getAttribute('data-drawio-xml')) {
-          // Update existing diagram
-          writer.setAttribute('src', svgDataUrl, selectedElement)
-          writer.setAttribute('data-drawio-xml', payload.xml, selectedElement)
-        } else {
-          // Insert new diagram using the existing imageInsert command
-          this.editor.execute('imageInsert', {
-            source: svgDataUrl
-          })
-
-          // Find the newly inserted image and add the draw.io XML attribute
-          const insertedImage = selection.getSelectedElement()
-          if (insertedImage && insertedImage.name === 'imageBlock') {
-            writer.setAttribute('data-drawio-xml', payload.xml, insertedImage)
-          }
-        }
-      })
-    },
-    initDrawioSupport () {
-      const editor = this.editor
-
-      // Extend schema to support data-drawio-xml attribute on images
-      editor.model.schema.extend('imageBlock', {
-        allowAttributes: ['data-drawio-xml']
-      })
-
-      // Conversion from model to view (downcast - for editing and data output)
-      editor.conversion.for('downcast').add(dispatcher => {
-        dispatcher.on('attribute:data-drawio-xml:imageBlock', (evt, data, conversionApi) => {
-          if (!data.item.is('element', 'imageBlock')) {
-            return
-          }
-
-          const viewWriter = conversionApi.writer
-          const viewElement = conversionApi.mapper.toViewElement(data.item)
-
-          if (data.attributeNewValue !== null) {
-            viewWriter.setAttribute('data-drawio-xml', data.attributeNewValue, viewElement)
-          } else {
-            viewWriter.removeAttribute('data-drawio-xml', viewElement)
-          }
-        })
-      })
-
-      // Conversion from view to model (upcast - for data loading)
-      editor.conversion.for('upcast').attributeToAttribute({
-        view: 'data-drawio-xml',
-        model: 'data-drawio-xml'
-      })
-
-      // Add a custom button to the toolbar
-      const toolbar = this.$refs.toolbarContainer.querySelector('.ck-toolbar')
-      if (toolbar) {
-        const button = document.createElement('button')
-        button.className = 'ck ck-button ck-off'
-        button.type = 'button'
-        button.title = 'Insert Diagram'
-        button.innerHTML = `
-          <svg class="ck ck-icon ck-button__icon" viewBox="0 0 20 20">
-            <path d="M3 6v3h4V6H3zm0 4v3h4v-3H3zm0 4v3h4v-3H3zm5 3h4v-3H8v3zm5 0h4v-3h-4v3zm4-4v-3h-4v3h4zm0-4V6h-4v3h4zm1.5 8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 17V4c.222-.863 1.068-1.5 2-1.5h13c.932 0 1.778.637 2 1.5v13zM12 13v-3H8v3h4zm0-4V6H8v3h4z"/>
-          </svg>
-        `
-        button.addEventListener('click', () => {
-          this.openDrawioModal()
-        })
-
-        // Insert after the imageUpload button if it exists, otherwise at the end
-        const imageUploadBtn = toolbar.querySelector('[data-cke-tooltip-text*="image" i], [data-cke-tooltip-text*="Insert" i]')
-        if (imageUploadBtn && imageUploadBtn.parentNode) {
-          imageUploadBtn.parentNode.insertBefore(button, imageUploadBtn.nextSibling)
-        } else {
-          toolbar.appendChild(button)
-        }
+    handleEditorInsert (opts) {
+      if (!this.editor) {
+        console.warn('Editor not initialized yet')
+        return
       }
+
+      switch (opts.kind) {
+        case 'IMAGE':
+          this.editor.execute('imageInsert', {
+            source: opts.path
+          })
+          break
+        case 'BINARY':
+          this.editor.execute('link', opts.path, {
+            linkIsDownloadable: true
+          })
+          break
+        case 'DIAGRAM':
+          // Store diagram as a special comment/marker instead of inserting as image
+          // This preserves the original XML data and shows an edit button
+          try {
+            this.editor.model.change(writer => {
+              if (this.editingDiagramBlock) {
+                // Update existing diagram block
+                const textNode = this.editingDiagramBlock.getChild(0)
+                if (textNode) {
+                  writer.remove(textNode)
+                }
+                writer.insertText(opts.text, this.editingDiagramBlock)
+                this.editingDiagramBlock = null
+              } else {
+                // Create new diagram block
+                const insertPosition = this.editor.model.document.selection.getFirstPosition()
+
+                // Create a code block for the diagram (similar to markdown)
+                const codeBlock = writer.createElement('codeBlock', {
+                  language: 'diagram'
+                })
+
+                // Insert the base64 XML data as text
+                writer.insertText(opts.text, codeBlock)
+
+                // Insert the code block
+                writer.insert(codeBlock, insertPosition)
+
+                // Move cursor after the code block
+                const newPosition = writer.createPositionAfter(codeBlock)
+                writer.setSelection(newPosition)
+              }
+            })
+          } catch (err) {
+            console.error('Error inserting diagram:', err)
+            this.$store.commit('showNotification', {
+              message: 'Failed to insert diagram.',
+              style: 'error',
+              icon: 'warning'
+            })
+          }
+          break
+      }
+    },
+    setupDiagramBlockRendering () {
+      // Override how diagram code blocks are rendered in the editor
+      this.editor.conversion.for('editingDowncast').add(dispatcher => {
+        dispatcher.on('insert:codeBlock', (evt, data, conversionApi) => {
+          const codeBlock = data.item
+
+          // Check if this is a diagram code block
+          if (codeBlock.getAttribute('language') === 'diagram') {
+            const viewWriter = conversionApi.writer
+            const mapper = conversionApi.mapper
+
+            // Prevent default conversion
+            evt.stop()
+
+            // Create a custom container for the diagram
+            const container = viewWriter.createContainerElement('div', {
+              class: 'wiki-diagram-placeholder'
+            })
+
+            // Insert the container
+            const insertPosition = conversionApi.mapper.toViewPosition(
+              conversionApi.model.createPositionBefore(codeBlock)
+            )
+            viewWriter.insert(insertPosition, container)
+
+            // Map the model element to the view element
+            mapper.bindElements(codeBlock, container)
+
+            // Add edit button after DOM is ready
+            this.$nextTick(() => {
+              const domElement = this.editor.editing.view.domConverter.mapViewToDom(container)
+              if (domElement && !domElement.querySelector('.wiki-diagram-edit-btn')) {
+                const textNode = codeBlock.getChild(0)
+                const diagramData = textNode ? textNode.data : ''
+
+                // Create edit button
+                const editBtn = document.createElement('button')
+                editBtn.className = 'wiki-diagram-edit-btn'
+                editBtn.innerHTML = '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; margin-right: 4px; vertical-align: text-bottom;"><path d="M3 3v14h14V3H3zm12 12H5V5h10v10z"/><path d="M6 6h3v3H6zm5 0h3v3h-3zm-5 5h3v3H6zm5 0h3v3h-3z"/></svg> Edit Diagram'
+                editBtn.type = 'button'
+                editBtn.contentEditable = 'false'
+
+                editBtn.addEventListener('click', (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+
+                  try {
+                    // Decode and set the data for editing
+                    this.$store.set('editor/activeModalData', Buffer.from(diagramData, 'base64').toString())
+                    this.activeModal = 'editorModalDrawio'
+
+                    // Store reference to the code block for updating after edit
+                    this.editingDiagramBlock = codeBlock
+                  } catch (err) {
+                    this.$store.commit('showNotification', {
+                      message: 'Failed to process diagram data.',
+                      style: 'warning',
+                      icon: 'warning'
+                    })
+                  }
+                })
+
+                domElement.innerHTML = ''
+                domElement.appendChild(editBtn)
+              }
+            })
+          }
+        }, { priority: 'high' })
+      })
+
+      // For data downcast (when saving), convert diagram code blocks to SVG images
+      this.editor.conversion.for('dataDowncast').add(dispatcher => {
+        dispatcher.on('insert:codeBlock', (evt, data, conversionApi) => {
+          const codeBlock = data.item
+
+          if (codeBlock.getAttribute('language') === 'diagram') {
+            const viewWriter = conversionApi.writer
+
+            // Prevent default conversion
+            evt.stop()
+
+            const textNode = codeBlock.getChild(0)
+            const diagramData = textNode ? textNode.data : ''
+
+            // Create an image element with the SVG data
+            const img = viewWriter.createEmptyElement('img', {
+              src: `data:image/svg+xml;base64,${diagramData}`,
+              class: 'wiki-diagram-image',
+              'data-diagram': diagramData
+            })
+
+            // Insert the image
+            const insertPosition = conversionApi.mapper.toViewPosition(
+              conversionApi.model.createPositionBefore(codeBlock)
+            )
+            viewWriter.insert(insertPosition, img)
+          }
+        }, { priority: 'high' })
+      })
     }
   },
   async mounted () {
@@ -185,8 +256,52 @@ export default {
     })
     this.$refs.toolbarContainer.appendChild(this.editor.ui.view.toolbar.element)
 
-    // Initialize draw.io integration
-    this.initDrawioSupport()
+    // Add custom rendering for diagram code blocks
+    this.setupDiagramBlockRendering()
+
+    // Add Insert Diagram button dynamically after editor is created
+    try {
+      // Get an existing button to copy its constructor
+      const existingButton = this.editor.ui.componentFactory.create('insertAsset')
+      if (existingButton && existingButton.constructor) {
+        const ButtonView = existingButton.constructor
+
+        // Add the insertDiagram component to the factory
+        this.editor.ui.componentFactory.add('insertDiagram', locale => {
+          const view = new ButtonView(locale)
+
+          view.set({
+            label: 'Insert Diagram',
+            icon: '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M3 3v14h14V3H3zm12 12H5V5h10v10z"/><path d="M6 6h3v3H6zm5 0h3v3h-3zm-5 5h3v3H6zm5 0h3v3h-3z"/></svg>',
+            tooltip: true
+          })
+
+          view.on('execute', () => {
+            this.insertDiagram()
+          })
+
+          return view
+        })
+
+        // Create and add the button to the toolbar
+        const diagramButton = this.editor.ui.componentFactory.create('insertDiagram')
+        const toolbar = this.editor.ui.view.toolbar
+
+        // Find the position after 'insertAsset' button
+        const items = toolbar.items
+        const insertAssetIndex = items._items.findIndex(item => {
+          return item.label === 'Insert Assets'
+        })
+
+        if (insertAssetIndex !== -1) {
+          items.add(diagramButton, insertAssetIndex + 1)
+        } else {
+          items.add(diagramButton)
+        }
+      }
+    } catch (err) {
+      console.warn('Could not add Insert Diagram button:', err)
+    }
 
     if (this.mode !== 'create') {
       this.editor.setData(this.$store.get('editor/content'))
@@ -196,24 +311,9 @@ export default {
       this.$store.set('editor/content', beautify(this.editor.getData(), { indent_size: 2, end_with_newline: true }))
     }, 300))
 
-    this.$root.$on('editorInsert', opts => {
-      switch (opts.kind) {
-        case 'IMAGE':
-          this.editor.execute('imageInsert', {
-            source: opts.path
-          })
-          break
-        case 'BINARY':
-          this.editor.execute('link', opts.path, {
-            linkIsDownloadable: true
-          })
-          break
-        case 'DIAGRAM':
-          this.editor.execute('imageInsert', {
-            source: `data:image/svg+xml;base64,${opts.text}`
-          })
-          break
-      }
+    // Wait for next tick to ensure editor is fully initialized
+    this.$nextTick(() => {
+      this.$root.$on('editorInsert', this.handleEditorInsert)
     })
 
     this.$root.$on('editorLinkToPage', opts => {
@@ -227,32 +327,9 @@ export default {
     this.$root.$on('overwriteEditorContent', () => {
       this.editor.setData(this.$store.get('editor/content'))
     })
-
-    // Handle double-click on diagrams to edit them
-    this.editor.editing.view.document.on('dblclick', (evt, data) => {
-      const viewElement = data.target
-      const modelElement = this.editor.editing.mapper.toModelElement(viewElement)
-
-      if (modelElement && modelElement.name === 'imageBlock') {
-        const drawioXml = modelElement.getAttribute('data-drawio-xml')
-        if (drawioXml) {
-          // Prevent default behavior
-          evt.stop()
-
-          // Select the image first
-          this.editor.model.change(writer => {
-            writer.setSelection(modelElement, 'on')
-          })
-
-          // Open draw.io modal with existing XML
-          window.dispatchEvent(new CustomEvent('editor:openDrawio', {
-            detail: drawioXml
-          }))
-        }
-      }
-    }, { priority: 'high' })
   },
   beforeDestroy () {
+    this.$root.$off('editorInsert', this.handleEditorInsert)
     if (this.editor) {
       this.editor.destroy()
       this.editor = null
@@ -368,6 +445,86 @@ $editor-height-mobile: calc(100vh - 56px - 16px);
       @at-root .theme--dark & {
         background-color: mc('grey', '900');
       }
+    }
+  }
+
+  // Diagram placeholder styling
+  .wiki-diagram-placeholder {
+    position: relative;
+    border: 2px dashed mc('blue', '400');
+    border-radius: 8px;
+    padding: 2rem;
+    margin: 1.5rem 0;
+    background: linear-gradient(135deg, mc('blue', '50') 0%, mc('indigo', '50') 100%);
+    text-align: center;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    @at-root .theme--dark & {
+      background: linear-gradient(135deg, rgba(mc('blue', '700'), 0.15) 0%, rgba(mc('indigo', '700'), 0.15) 100%);
+      border-color: mc('blue', '600');
+    }
+
+    &::before {
+      content: 'Draw.io Diagram';
+      position: absolute;
+      top: 0.5rem;
+      left: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: mc('blue', '600');
+      opacity: 0.8;
+
+      @at-root .theme--dark & {
+        color: mc('blue', '300');
+      }
+    }
+  }
+
+  .wiki-diagram-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background-color: mc('blue', '500');
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      background-color: mc('blue', '600');
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      background-color: mc('blue', '700');
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      transform: translateY(0);
+    }
+
+    @at-root .theme--dark & {
+      background-color: mc('blue', '600');
+
+      &:hover {
+        background-color: mc('blue', '500');
+      }
+
+      &:active {
+        background-color: mc('blue', '400');
+      }
+    }
+
+    svg {
+      fill: currentColor;
     }
   }
 }

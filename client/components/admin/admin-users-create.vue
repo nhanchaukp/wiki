@@ -22,7 +22,7 @@
           outlined
           prepend-icon='mdi-at'
           v-model='email'
-          label='User'
+          label='Email Address'
           key='newUserEmail'
           persistent-hint
           ref='emailInput'
@@ -33,7 +33,7 @@
           prepend-icon='mdi-lock-outline'
           append-icon='mdi-dice-5'
           v-model='password'
-          :label='mustChangePwd ? `Temporary Password` : `OTP`'
+          :label='mustChangePwd ? `Temporary Password` : `Password`'
           counter='255'
           @click:append='generatePwd'
           key='newUserPassword'
@@ -70,13 +70,13 @@
           v-model='mustChangePwd'
           hide-details
         )
-        v-checkbox(
-          color='primary'
-          label='Send a welcome email'
-          hide-details
-          v-model='sendWelcomeEmail'
-          disabled
-        )
+        //- v-checkbox(
+        //-   color='primary'
+        //-   label='Send a welcome email'
+        //-   hide-details
+        //-   v-model='sendWelcomeEmail'
+        //-   disabled
+        //- )
       v-card-chin
         v-spacer
         v-btn(text, @click='isShown = false') Cancel
