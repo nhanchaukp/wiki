@@ -80,7 +80,7 @@
 
 .cm-s-wikijs-dark .CodeMirror-foldmarker {
   margin-left: 10px;
-  display: inline-block;
+  display: none; // 1100 - hide show base64 of diagram
   background-color: rgba(mc('amber', '800'), .3);
   padding: 8px 5px;
   color: mc('amber', '500');

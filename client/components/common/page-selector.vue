@@ -207,7 +207,26 @@ export default {
   watch: {
     isShown (newValue, oldValue) {
       if (newValue && !oldValue) {
-        this.currentPath = this.path
+        // Auto-detect path from current URL when creating a new page
+        if (this.mode === 'create') {
+          const urlPath = window.location.pathname
+          const pathSegments = urlPath.split('/').filter(s => s.length > 0)
+
+          // Remove locale if present
+          if (pathSegments.length > 0 && localeSegmentRegex.test(pathSegments[0])) {
+            pathSegments.shift()
+          }
+
+          // Use current path if valid, otherwise use provided path
+          if (pathSegments.length > 0 && pathSegments[0] !== 'home') {
+            this.currentPath = pathSegments.join('/')
+          } else {
+            this.currentPath = this.path
+          }
+        } else {
+          this.currentPath = this.path
+        }
+
         this.currentLocale = this.locale
         _.delay(() => {
           this.$refs.pathIpt.focus()

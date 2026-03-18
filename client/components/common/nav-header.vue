@@ -117,8 +117,15 @@
                     v-list-item-title {{lc.name}}
             v-divider(vertical)
 
+          //- SLIDESHOW
+          template(v-if='hasNewPagePermission && path && mode !== `edit`')
+            v-tooltip(bottom)
+              template(v-slot:activator='{ on }')
+                v-btn(icon, tile, height='64', v-on='on', @click='toggleSlideshow', :aria-label='$t(`common:header.slideShowMode`)')
+                  v-icon(:color='slideshowMode ? `primary` : `grey`') mdi-presentation-play
+              span {{$t('common:header.slideShowMode')}}
+            v-divider(vertical)
           //- PAGE ACTIONS
-
           template(v-if='hasAnyPagePermissions && path && mode !== `edit`')
             v-menu(offset-y, bottom, transition='slide-y-transition', left)
               template(v-slot:activator='{ on: menu, attrs }')
@@ -296,6 +303,7 @@ export default {
     searchIsLoading: sync('site/searchIsLoading'),
     searchRestrictLocale: sync('site/searchRestrictLocale'),
     searchRestrictPath: sync('site/searchRestrictPath'),
+    slideshowMode: sync('site/slideshowMode'),
     isLoading: get('isLoading'),
     title: get('site/title'),
     logoUrl: get('site/logoUrl'),
@@ -481,6 +489,10 @@ export default {
       } else {
         window.location.assign('/')
       }
+    },
+    toggleSlideshow () {
+      this.slideshowMode = !this.slideshowMode
+      localStorage.setItem('slideshowMode', this.slideshowMode)
     }
   }
 }

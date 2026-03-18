@@ -1,14 +1,14 @@
 <template lang="pug">
   v-app
     .login(:style='`background-image: url(` + bgUrl + `);`')
-      .login-sd
-        .d-flex.mb-5
+      .login-sd.elevation-8
+        .login-head
           .login-logo
             v-avatar(tile, size='34')
               v-img(:src='logoUrl')
           .login-title
             .text-h6.grey--text.text--darken-4 {{ siteTitle }}
-        v-alert.mb-0(
+        v-alert.login-alert.mb-0(
           v-model='errorShown'
           transition='slide-y-reverse-transition'
           color='red darken-2'
@@ -25,7 +25,7 @@
           .login-subtitle
             .text-subtitle-1 {{$t('auth:selectAuthProvider')}}
           .login-list
-            v-list.elevation-1.radius-7(nav, light)
+            v-list.login-provider-list(nav, light)
               v-list-item-group(v-model='selectedStrategyKey')
                 v-list-item(
                   v-for='(stg, idx) of filteredStrategies'
@@ -702,75 +702,130 @@ export default {
     background-color: mc('grey', '900');
     background-size: cover;
     background-position: center center;
+    position: relative;
     width: 100%;
-    height: 100%;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(145deg, rgba(17, 24, 39, .55), rgba(17, 24, 39, .3));
+      pointer-events: none;
+    }
 
     &-sd {
-      background-color: rgba(255,255,255,.8);
+      position: relative;
+      z-index: 1;
+      background-color: rgba(255,255,255,.9);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      border-left: 1px solid rgba(255,255,255,.85);
-      border-right: 1px solid rgba(255,255,255,.85);
-      width: 450px;
-      height: 100%;
-      margin-left: 5vw;
+      border: 1px solid rgba(255,255,255,.82);
+      width: min(450px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+      border-radius: 16px;
 
       @at-root .no-backdropfilter & {
         background-color: rgba(255,255,255,.95);
       }
 
       @include until($tablet) {
-        margin-left: 0;
         width: 100%;
+        max-height: calc(100vh - 24px);
       }
     }
 
+    &-head {
+      display: flex;
+      align-items: center;
+      padding: 18px 18px 10px;
+      border-bottom: 1px solid rgba(17, 24, 39, .08);
+      background: linear-gradient(to bottom, rgba(255,255,255,.65), rgba(255,255,255,0));
+    }
+
     &-logo {
-      padding: 12px 0 0 12px;
-      width: 58px;
-      height: 58px;
-      background-color: #222;
-      margin-left: 12px;
-      border-bottom-left-radius: 7px;
-      border-bottom-right-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 50px;
+      height: 50px;
+      background-color: mc('grey', '900');
+      border-radius: 12px;
+      flex: 0 0 auto;
     }
 
     &-title {
-      height: 58px;
-      padding-left: 12px;
+      min-height: 50px;
+      padding-left: 14px;
       display: flex;
       align-items: center;
-      text-shadow: .5px .5px #FFF;
+      font-weight: 600;
+      letter-spacing: .2px;
     }
 
     &-subtitle {
-      padding: 24px 12px 12px 12px;
-      color: #111;
+      padding: 20px 18px 10px;
+      color: mc('grey', '900');
       font-weight: 500;
-      text-shadow: 1px 1px rgba(255,255,255,.5);
-      background-image: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.15));
+      background-image: none;
       text-align: center;
-      border-bottom: 1px solid rgba(0,0,0,.3);
+      border-bottom: 1px solid rgba(17, 24, 39, .08);
     }
 
     &-info {
       border-top: 1px solid rgba(255,255,255,.85);
-      background-color: rgba(255,255,255,.15);
-      border-bottom: 1px solid rgba(0,0,0,.15);
-      padding: 12px;
+      background-color: rgba(255,255,255,.35);
+      border-bottom: 1px solid rgba(17, 24, 39, .08);
+      padding: 14px 18px;
       font-size: 13px;
       text-align: center;
       color: mc('grey', '900');
+      line-height: 1.5;
     }
 
     &-list {
       border-top: 1px solid rgba(255,255,255,.85);
-      padding: 12px;
+      padding: 12px 18px 18px;
     }
 
     &-form {
-      padding: 12px;
+      padding: 12px 18px 18px;
       border-top: 1px solid rgba(255,255,255,.85);
+    }
+
+    &-alert {
+      margin: 12px 18px 0;
+      border-radius: 10px;
+    }
+
+    &-provider-list {
+      border: 1px solid rgba(17, 24, 39, .08);
+      border-radius: 10px;
+      box-shadow: none;
+    }
+
+    &-form,
+    &-tfa {
+      .v-input__slot {
+        border: 1px solid rgba(17, 24, 39, .12);
+        border-radius: 10px !important;
+        box-shadow: none !important;
+        transition: border-color .2s ease;
+      }
+
+      .v-input--is-focused .v-input__slot {
+        border-color: rgba(25, 118, 210, .45);
+      }
+
+      .v-btn {
+        border-radius: 10px;
+        letter-spacing: .2px;
+      }
     }
 
     &-main {
@@ -781,6 +836,7 @@ export default {
     &-tfa {
       background-color: #EEE;
       border: 7px solid #FFF;
+      border-radius: 12px;
 
       &-field input {
         text-align: center;

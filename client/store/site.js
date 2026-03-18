@@ -16,7 +16,8 @@ const state = {
   searchIsLoading: false,
   searchRestrictLocale: false,
   searchRestrictPath: false,
-  printView: false
+  printView: false,
+  slideshowMode: localStorage.getItem('slideshowMode') === 'true' || false
 }
 
 export default {

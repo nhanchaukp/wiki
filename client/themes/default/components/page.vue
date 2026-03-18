@@ -1,9 +1,9 @@
 <template lang="pug">
-  v-app(v-scroll='upBtnScroll', :dark='$vuetify.theme.dark', :class='$vuetify.rtl ? `is-rtl` : `is-ltr`')
+  v-app(v-scroll='upBtnScroll', :dark='$vuetify.theme.dark', :class='[$vuetify.rtl ? `is-rtl` : `is-ltr`, { "slideshow-mode": slideshowMode }]')
     nav-header(v-if='!printView')
     v-navigation-drawer(
       v-if='navMode !== `NONE` && !printView'
-      :class='$vuetify.theme.dark ? `grey darken-4-d4` : `primary`'
+      :class='[$vuetify.theme.dark ? `grey darken-4-d4` : `primary`, { "slideshow-hidden": slideshowMode }]'
       dark
       app
       clipped
@@ -54,7 +54,7 @@
             :offset-xl='tocPosition === `left` ? 2 : 0'
             :offset-lg='tocPosition === `left` ? 3 : 0'
             :xl='tocPosition === `right` ? 10 : false'
-            :lg='tocPosition === `right` ? 9 : false'
+            :lg='tocPosition === `right` && !slideshowMode ? 9 : false'
             style='margin-top: auto; margin-bottom: auto;'
             :class='$vuetify.rtl ? `pr-4` : `pl-4`'
             )
@@ -86,7 +86,7 @@
       v-container.pl-5.pt-4(fluid, grid-list-xl)
         v-layout(row)
           v-flex.page-col-sd(
-            v-if='tocPosition !== `off` && $vuetify.breakpoint.lgAndUp'
+            v-if='tocPosition !== `off` && $vuetify.breakpoint.lgAndUp && !slideshowMode'
             :order-xs1='tocPosition !== `right`'
             :order-xs2='tocPosition === `right`'
             lg3
@@ -222,10 +222,11 @@
 
           v-flex.page-col-content(
             xs12
-            :lg9='tocPosition !== `off`'
-            :xl10='tocPosition !== `off`'
+            :lg9='tocPosition !== `off` && !slideshowMode'
+            :xl10='tocPosition !== `off` && !slideshowMode'
             :order-xs1='tocPosition === `right`'
             :order-xs2='tocPosition !== `right`'
+            :class='{ "slideshow-fullwidth": slideshowMode }'
             )
             v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasAnyPagePermissions && editShortcutsObj.editFab')
               template(v-slot:activator='{ on: onEditActivator }')
@@ -531,6 +532,7 @@ export default {
     commentsCount: get('page/commentsCount'),
     commentsPerms: get('page/effectivePermissions@comments'),
     editShortcutsObj: get('page/editShortcuts'),
+    slideshowMode: get('site/slideshowMode'),
     rating: {
       get () {
         return 3.5
@@ -797,4 +799,19 @@ export default {
   }
 }
 
+.slideshow-hidden {
+  transform: translateX(-100%) !important;
+}
+
+.slideshow-fullwidth {
+  max-width: 100% !important;
+  flex-basis: 100% !important;
+}
+
+.slideshow-mode .v-main {
+  padding-left: 0 !important;
+}
+.slideshow-mode .v-application--wrap button.v-btn--left {
+  left: 16px !important;
+}
 </style>

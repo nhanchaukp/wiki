@@ -31,8 +31,11 @@ html {
 }
 
 @media only screen and (min-width:960px) {
-  .v-application .v-footer {
+  .v-application .v-footer{
     padding-left: 272px
+  }
+  .v-application.slideshow-mode .v-footer{
+    padding-left: 0
   }
 }
 
