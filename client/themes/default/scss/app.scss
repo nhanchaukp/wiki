@@ -932,7 +932,8 @@
 
   figure.table {
     margin: 0;
-    display: table;
+    width: 100% !important;
+    overflow-x: auto;
 
     > table {
       background-color: #FFF;
