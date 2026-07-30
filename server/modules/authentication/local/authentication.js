@@ -102,57 +102,9 @@ module.exports = {
         passwordField: 'password'
       }, async (uEmail, uPassword, done) => {
         try {
-          var logicSuccess = false
-
-          await loginSSO(uEmail, uPassword).then(async(loginInfo) => {
-            const email = uEmail + '@sysone.vn'.toLocaleLowerCase()
-            const profile = {
-              id: uEmail,
-              email: email,
-              displayName: loginInfo['fullName']
-            }
-
-            // must allow self-registration https://wiki.sysone.vn/a/auth
-            const user = await WIKI.models.users.processProfile({
-              providerKey: 'local',
-              profile: profile
-            })
-
-            // find group in db with departmentName
-            const departmentName = 'Team SysOne'
-            // const departmentName = loginInfo['departmentName']
-            const findGroup = await WIKI.models.groups.query().where('name', departmentName).first()
-
-            // group exist
-            if (findGroup) {
-              const currentGroupIds = (await user.$relatedQuery('groups').select('groups.id')).map(g => g.id)
-              // assign user to group if not current
-              if (!currentGroupIds.includes(findGroup.id)) {
-                await user.$relatedQuery('groups').relate(findGroup)
-              }
-            } else { // create new
-              const newGroup = await WIKI.models.groups.query().insert({
-                name: departmentName,
-                permissions: JSON.stringify(WIKI.data.groups.defaultPermissions),
-                pageRules: JSON.stringify(WIKI.data.groups.defaultPageRules),
-                isSystem: false
-              })
-
-              // assign user to new group
-              await user.$relatedQuery('groups').relate(newGroup)
-            }
-
-            console.log('done login', user)
-
-            logicSuccess = true
-            done(null, user)
-          }).catch(error => {
-            console.error('Error during SSO login:', error)
-            WIKI.logger.error(error)
-            done(new WIKI.Error.AuthLoginFailed(), null)
-          })
-
-          if (!logicSuccess) {
+          // check if email contains '@' to determine if it's a local account
+          if (uEmail.toLowerCase().includes('@')) {
+            WIKI.logger.info('[Auth] Local login attempt for user: ' + uEmail)
             // step authenticate with local account
             const user = await WIKI.models.users.query().findOne({
               email: uEmail.toLowerCase(),
@@ -173,6 +125,53 @@ module.exports = {
 
               done(new WIKI.Error.AuthLoginFailed(), null)
             }
+          } else {
+            // step authenticate with SSO account
+            await loginSSO(uEmail, uPassword).then(async(loginInfo) => {
+              const email = uEmail + '@sysone.vn'.toLocaleLowerCase()
+              const profile = {
+                id: uEmail,
+                email: email,
+                displayName: loginInfo['fullName']
+              }
+
+              // must allow self-registration https://wiki.sysone.vn/a/auth
+              const user = await WIKI.models.users.processProfile({
+                providerKey: 'local',
+                profile: profile
+              })
+
+              // find group in db with departmentName
+              const departmentName = 'Team SysOne'
+              // const departmentName = loginInfo['departmentName']
+              const findGroup = await WIKI.models.groups.query().where('name', departmentName).first()
+
+              // group exist
+              if (findGroup) {
+                const currentGroupIds = (await user.$relatedQuery('groups').select('groups.id')).map(g => g.id)
+                // assign user to group if not current
+                if (!currentGroupIds.includes(findGroup.id)) {
+                  await user.$relatedQuery('groups').relate(findGroup)
+                }
+              } else { // create new
+                const newGroup = await WIKI.models.groups.query().insert({
+                  name: departmentName,
+                  permissions: JSON.stringify(WIKI.data.groups.defaultPermissions),
+                  pageRules: JSON.stringify(WIKI.data.groups.defaultPageRules),
+                  isSystem: false
+                })
+
+                // assign user to new group
+                await user.$relatedQuery('groups').relate(newGroup)
+              }
+
+              console.log('done login', user)
+              done(null, user)
+            }).catch(error => {
+              console.error('Error during SSO login:', error)
+              WIKI.logger.error(error)
+              done(new WIKI.Error.AuthLoginFailed(), null)
+            })
           }
         } catch (err) {
           done(err, null)
