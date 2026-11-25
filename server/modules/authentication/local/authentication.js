@@ -102,32 +102,11 @@ module.exports = {
         passwordField: 'password'
       }, async (uEmail, uPassword, done) => {
         try {
-          // check if email contains '@' to determine if it's a local account
-          if (uEmail.toLowerCase().includes('@')) {
-            WIKI.logger.info('[Auth] Local login attempt for user: ' + uEmail)
-            // step authenticate with local account
-            const user = await WIKI.models.users.query().findOne({
-              email: uEmail.toLowerCase(),
-              providerKey: 'local'
-            })
-            if (user) {
-              await user.verifyPassword(uPassword)
-              if (!user.isActive) {
-                done(new WIKI.Error.AuthAccountBanned(), null)
-              } else if (!user.isVerified) {
-                done(new WIKI.Error.AuthAccountNotVerified(), null)
-              } else {
-                done(null, user)
-              }
-            } else {
-            // Fake verify password to mask timing differences
-              await bcrypt.compare((Math.random() + 1).toString(36), '$2a$12$irXbAcQSY59pcQQfNQpY8uyhfSw48nzDikAmr60drI501nR.PuBx2')
-
-              done(new WIKI.Error.AuthLoginFailed(), null)
-            }
-          } else {
+          // if account is sso account s1 (number) then login with sso
+          if (typeof uEmail === 'number' && Number.isFinite(uEmail)) {
             // step authenticate with SSO account
             await loginSSO(uEmail, uPassword).then(async(loginInfo) => {
+              WIKI.logger.info(`[Auth] SSO login successful for user: ${uEmail}`)
               const email = uEmail + '@sysone.vn'.toLocaleLowerCase()
               const profile = {
                 id: uEmail,
@@ -172,6 +151,31 @@ module.exports = {
               WIKI.logger.error(error)
               done(new WIKI.Error.AuthLoginFailed(), null)
             })
+          } else {
+            if (!uEmail.includes('@')) {
+              uEmail = uEmail + '@sysone.vn'
+            }
+            WIKI.logger.info('[Auth] Local login attempt for user: ' + uEmail)
+            // step authenticate with local account
+            const user = await WIKI.models.users.query().findOne({
+              email: uEmail.toLowerCase(),
+              providerKey: 'local'
+            })
+            if (user) {
+              await user.verifyPassword(uPassword)
+              if (!user.isActive) {
+                done(new WIKI.Error.AuthAccountBanned(), null)
+              } else if (!user.isVerified) {
+                done(new WIKI.Error.AuthAccountNotVerified(), null)
+              } else {
+                done(null, user)
+              }
+            } else {
+            // Fake verify password to mask timing differences
+              await bcrypt.compare((Math.random() + 1).toString(36), '$2a$12$irXbAcQSY59pcQQfNQpY8uyhfSw48nzDikAmr60drI501nR.PuBx2')
+
+              done(new WIKI.Error.AuthLoginFailed(), null)
+            }
           }
         } catch (err) {
           done(err, null)
