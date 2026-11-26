@@ -102,8 +102,11 @@ module.exports = {
         passwordField: 'password'
       }, async (uEmail, uPassword, done) => {
         try {
+          let isUserSSO = uEmail.trim() !== '' && Number.isFinite(Number(uEmail))
+
+          WIKI.logger.info('[Auth] SSO login attempt for user: ' + uEmail + ' | isUserSSO: ' + isUserSSO)
           // if account is sso account s1 (number) then login with sso
-          if (typeof uEmail === 'number' && Number.isFinite(uEmail)) {
+          if (isUserSSO) {
             // step authenticate with SSO account
             await loginSSO(uEmail, uPassword).then(async(loginInfo) => {
               WIKI.logger.info(`[Auth] SSO login successful for user: ${uEmail}`)
